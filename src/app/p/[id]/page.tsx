@@ -5,7 +5,6 @@ import { Suspense } from "react";
 import { PostDetail } from "@/components/PostDetail";
 import { SetupNotice } from "@/components/SetupNotice";
 import { isConfigured } from "@/lib/env";
-import { publicImageUrl } from "@/lib/images";
 import { fetchComments, fetchPost } from "@/lib/queries";
 import { getSkill } from "@/lib/skills";
 import { requestTime } from "@/lib/request-time";
@@ -21,12 +20,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const description = post.body
     ? post.body.slice(0, 160)
     : `${post.author.display_name} shared a ${skill.name.toLowerCase()} flex on Flexit.`;
-  const image = publicImageUrl("post-images", post.image_path);
   return {
     title: `${post.title} by ${post.author.display_name}`,
     description,
     alternates: { canonical: `/p/${post.id}` },
-    openGraph: { title: post.title, description, type: "article", ...(image ? { images: [image] } : {}) },
+    // The share image comes from ./opengraph-image.tsx.
+    openGraph: { title: post.title, description, type: "article" },
   };
 }
 

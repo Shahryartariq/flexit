@@ -183,6 +183,72 @@ function Editor() {
           Sign out
         </button>
       </section>
+
+      <DeleteAccount userId={userId} username={profile.username} />
     </div>
+  );
+}
+
+/** Removes the person's uploads, then their account and everything they posted. */
+function DeleteAccount({ userId, username }: { userId: string; username: string }) {
+  const router = useRouter();
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    const db = supabaseBrowser();
+    try {
+      for (const bucket of ["post-images", "avatars"] as const) {
+        const { data } = await db.storage.from(bucket).list(userId, { limit: 1000 });
+        const paths = (data ?? []).map((file) => `${userId}/${file.name}`);
+        if (paths.length) await db.storage.from(bucket).remove(paths);
+      }
+      const { error: failure } = await db.rpc("delete_my_account");
+      if (failure) throw new Error(failure.message);
+      await signOut();
+      router.push("/");
+      router.refresh();
+    } catch (e) {
+      setError(friendlyError(e instanceof Error ? e.message : String(e)));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card flex flex-col gap-3 border-danger/40 p-6" aria-labelledby="delete-title">
+      <h2 id="delete-title" className="font-semibold text-danger">
+        Delete account
+      </h2>
+      <p className="text-sm text-muted">
+        This permanently deletes your profile, every flex and photo you posted, your likes, comments and follows. It
+        can&apos;t be undone.
+      </p>
+      <label className="flex flex-col gap-1.5 text-sm font-semibold">
+        Type your username ({username}) to confirm
+        <input
+          className="field font-normal"
+          autoCapitalize="none"
+          spellCheck={false}
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+        />
+      </label>
+      {error && (
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        className="btn self-start bg-danger text-white"
+        disabled={busy || confirm.trim().toLowerCase() !== username}
+        onClick={() => void remove()}
+      >
+        {busy ? "Deleting…" : "Delete my account"}
+      </button>
+    </section>
   );
 }

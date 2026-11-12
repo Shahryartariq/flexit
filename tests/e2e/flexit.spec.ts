@@ -191,3 +191,41 @@ test("unknown flexes and people show a 404 page", async ({ page }) => {
   await page.goto("/u/nobody_here_123");
   await expect(page.getByText("Nothing to flex here")).toBeVisible();
 });
+
+test("share images, sitemap and privacy page are served", async ({ request, page }) => {
+  const og = await request.get("/opengraph-image");
+  expect(og.status()).toBe(200);
+  expect(og.headers()["content-type"]).toBe("image/png");
+  const sitemap = await (await request.get("/sitemap.xml")).text();
+  expect(sitemap).toContain(`/u/${maker.username}`);
+  expect(sitemap).toContain("/s/music");
+  const robots = await (await request.get("/robots.txt")).text();
+  expect(robots).toContain("Disallow: /settings");
+  await page.goto("/privacy");
+  await expect(page.getByRole("heading", { level: 1, name: "Privacy" })).toBeVisible();
+});
+
+test("people can delete their account and everything goes with it", async ({ browser }) => {
+  const { context, page } = await newContext(browser);
+  await page.goto("/sign-in");
+  await page.getByLabel("Email").fill(`${maker.username}@example.com`);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("link", { name: "Flex it" })).toBeVisible();
+
+  const flex = await page.request.get("/");
+  expect(flex.ok()).toBe(true);
+  await page.goto("/settings");
+  const button = page.getByRole("button", { name: "Delete my account" });
+  await expect(button).toBeDisabled();
+  await page.getByLabel(/Type your username/).fill(maker.username);
+  await button.click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("link", { name: "Join" })).toBeVisible();
+
+  await page.goto(`/u/${maker.username}`);
+  await expect(page.getByText("Nothing to flex here")).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByText(`Shipped my first app ${stamp}`)).toHaveCount(0);
+  await context.close();
+});

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import Link from "next/link";
+import { Analytics } from "@/components/Analytics";
 import { Logo } from "@/components/Logo";
 import { UserMenu } from "@/components/UserMenu";
 import { SITE_URL } from "@/lib/env";
@@ -28,6 +29,9 @@ export const metadata: Metadata = {
   applicationName: "Flexit",
   openGraph: { siteName: "Flexit", type: "website" },
   twitter: { card: "summary_large_image" },
+  ...(process.env.GOOGLE_SITE_VERIFICATION
+    ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION } }
+    : {}),
 };
 
 export const viewport: Viewport = {
@@ -57,7 +61,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         </main>
         <footer className="border-t border-line">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-muted">
-            <p>Flexit · Made something? Flex it.</p>
+            <p>
+              Flexit · Made something? Flex it. ·{" "}
+              <Link href="/privacy" className="hover:underline">
+                Privacy
+              </Link>
+            </p>
             <p>
               Built with Next.js and Supabase by{" "}
               <a className="font-semibold text-ink hover:underline" href="https://github.com/Shahryartariq">
@@ -66,6 +75,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             </p>
           </div>
         </footer>
+        <Analytics id={process.env.GA_MEASUREMENT_ID} />
       </body>
     </html>
   );
