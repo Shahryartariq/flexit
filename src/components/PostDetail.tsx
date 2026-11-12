@@ -169,6 +169,7 @@ export function PostDetail({
                 type="button"
                 onClick={() => void remove()}
                 disabled={deleting}
+                aria-label="Delete this flex"
                 className="rounded-full px-3 py-1 font-semibold text-danger hover:bg-paper disabled:opacity-50"
               >
                 {deleting ? "Deleting…" : "Delete"}

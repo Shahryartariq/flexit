@@ -126,7 +126,12 @@ export function Comments({
                   {timeAgo(comment.created_at, now)}
                 </time>
                 {userId && (userId === comment.author_id || userId === postAuthorId) && (
-                  <button type="button" className="hover:text-danger" onClick={() => void remove(comment.id)}>
+                  <button
+                    type="button"
+                    className="hover:text-danger"
+                    aria-label="Delete comment"
+                    onClick={() => void remove(comment.id)}
+                  >
                     Delete
                   </button>
                 )}

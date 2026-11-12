@@ -121,8 +121,9 @@ test("new flexes, likes and comments arrive live", async ({ browser }) => {
   await viewer.page.getByRole("button", { name: "Post", exact: true }).click();
   await expect(author.page.getByTestId("comments").getByText("This is great!")).toBeVisible();
 
-  // Only the author can delete the flex.
-  await expect(viewer.page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+  // Only the author can delete the flex; the viewer can delete their own comment.
+  await expect(viewer.page.getByRole("button", { name: "Delete this flex" })).toHaveCount(0);
+  await expect(viewer.page.getByRole("button", { name: "Delete comment" })).toHaveCount(1);
 
   await viewer.context.close();
   await author.context.close();
@@ -165,7 +166,7 @@ test("profiles can be edited and flexes deleted by their owner", async ({ browse
 
   await page.getByTestId("feed").getByText(`First song on guitar ${stamp}`).click();
   page.once("dialog", (dialog) => void dialog.accept());
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("button", { name: "Delete this flex" }).click();
   await expect(page).toHaveURL(new RegExp(`/u/${maker.username}$`));
   await expect(page.getByTestId("feed").getByText(`First song on guitar ${stamp}`)).toHaveCount(0);
   await context.close();
