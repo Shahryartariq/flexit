@@ -34,7 +34,8 @@ async function postFlex(page: Page, { skill, title, story, photo }: { skill: str
   return page.url();
 }
 
-test.describe.configure({ mode: "serial" });
+// The steps build on each other (accounts, posts), so a retry would start from a dirty state.
+test.describe.configure({ mode: "serial", retries: 0 });
 
 const maker = { name: "Sara Maker", username: `sara_${stamp}` };
 const fan = { name: "Ali Fan", username: `ali_${stamp}` };
@@ -164,7 +165,11 @@ test("profiles can be edited and flexes deleted by their owner", async ({ browse
   await page.goto(`/u/${maker.username}`);
   await expect(page.getByText("Full-stack developer and weekend guitarist")).toBeVisible();
 
-  await page.getByTestId("feed").getByRole("link", { name: `First song on guitar ${stamp}` }).click();
+  const href = await page
+    .getByTestId("feed")
+    .getByRole("link", { name: `First song on guitar ${stamp}` })
+    .getAttribute("href");
+  await page.goto(href!);
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "Delete this flex" }).click();
   await expect(page).toHaveURL(new RegExp(`/u/${maker.username}$`));
