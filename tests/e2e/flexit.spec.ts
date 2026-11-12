@@ -79,7 +79,7 @@ test("a maker posts a flex with a photo and it shows up everywhere", async ({ br
   const image = page.getByRole("img", { name: `Shipped my first app ${stamp}` });
   await expect(image).toBeVisible();
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
-  await expect(page.getByText("Took three weekends.")).toBeVisible();
+  await expect(page.getByRole("article").getByText(/Took three weekends\./)).toBeVisible();
 
   // On the home feed, the skill page and the profile.
   for (const path of ["/", "/s/development", `/u/${maker.username}`]) {
