@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      # Builds without Supabase keys too, so a fresh deploy never fails.
+      - run: pnpm build
+
+  supabase:
+    name: Database rules + end-to-end (local Supabase)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start Supabase (database, auth, REST, storage, realtime)
+        run: pnpm exec supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,postgres-meta,mailpit
+      - name: Export Supabase keys
+        run: |
+          pnpm exec supabase status -o json > status.json
+          echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r '.API_URL' status.json)" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$(jq -r '.PUBLISHABLE_KEY // .ANON_KEY' status.json)" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=$(jq -r '.DB_URL' status.json)" >> "$GITHUB_ENV"
+          rm status.json
+      - name: Row level security tests
+        run: pnpm test:db
+      - run: pnpm build
+        env:
+          NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
