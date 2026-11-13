@@ -115,10 +115,13 @@ export function friendlyError(message: string) {
   return "Something went wrong. Please try again.";
 }
 
-/** Strips characters that have meaning in PostgREST filters and LIKE patterns. */
+/**
+ * Strips characters that have meaning in PostgREST filters. "_" stays (usernames
+ * use it); as a LIKE wildcard it only ever widens a match by one character.
+ */
 export function cleanSearch(raw: string) {
   return raw
-    .replace(/[,()*%_\\:."']/g, " ")
+    .replace(/[,()*%\\:"']/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 60);

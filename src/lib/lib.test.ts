@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { count, linkLabel, plural, timeAgo } from "./format";
 import { fitWithin, imagePath, publicImageUrl } from "./images";
 import { safeNext } from "./next-path";
-import { friendlyError, isUuid } from "./queries";
+import { cleanSearch, friendlyError, isUuid } from "./queries";
 import { SKILLS, getSkill, findSkill } from "./skills";
 import { normalizeLink, postSchema, profileSchema, signUpSchema, usernameSchema } from "./validation";
 
@@ -141,5 +141,14 @@ describe("queries helpers", () => {
     expect(friendlyError("Slow down: you can post 10 flexes an hour.")).toMatch(/10 flexes an hour/);
     expect(friendlyError('new row violates row-level security policy for table "posts"')).toMatch(/signed in/);
     expect(friendlyError("TypeError: Failed to fetch")).toMatch(/connection/);
+  });
+});
+
+describe("cleanSearch", () => {
+  it("keeps usernames and words, drops filter syntax", () => {
+    expect(cleanSearch("  sara_dev ")).toBe("sara_dev");
+    expect(cleanSearch("v2.0 release")).toBe("v2.0 release");
+    expect(cleanSearch("a,b)or(c*%")).toBe("a b or c");
+    expect(cleanSearch("x".repeat(80))).toHaveLength(60);
   });
 });
