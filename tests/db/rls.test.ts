@@ -252,3 +252,32 @@ describe("storage", () => {
       ).toMatch(/row-level security/);
     }));
 });
+
+describe("deleting an account", () => {
+  it("removes the person and everything they posted, and nobody else's", () =>
+    inTransaction(async (db) => {
+      const leaver = await createUser(db, { username: "leaver" });
+      const stayer = await createUser(db, { username: "stayer" });
+      await actAs(db, stayer);
+      const kept = await newPost(db, "Still here");
+      await actAs(db, leaver);
+      await newPost(db, "Goodbye post");
+      await db.query("insert into public.likes (post_id) values ($1)", [kept]);
+      await db.query("insert into public.follows (following_id) values ($1)", [stayer]);
+
+      await db.query("select public.delete_my_account()");
+
+      await actAs(db, null);
+      expect(await rowCount(db, "select 1 from public.profiles where id = $1", [leaver])).toBe(0);
+      expect(await rowCount(db, "select 1 from public.posts where author_id = $1", [leaver])).toBe(0);
+      expect(await rowCount(db, "select 1 from public.follows where follower_id = $1", [leaver])).toBe(0);
+      const { rows } = await db.query("select like_count from public.posts where id = $1", [kept]);
+      expect(rows[0].like_count).toBe(0);
+    }));
+
+  it("can't be called by anonymous visitors", () =>
+    inTransaction(async (db) => {
+      await actAs(db, null);
+      expect(await tryQuery(db, "select public.delete_my_account()")).toMatch(/permission denied/);
+    }));
+});
