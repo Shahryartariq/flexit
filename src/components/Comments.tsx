@@ -106,7 +106,7 @@ export function Comments({
       <ol className="flex max-h-[420px] flex-col gap-4 overflow-y-auto px-5 py-4" data-testid="comments">
         {comments.map((comment) => (
           <li key={comment.id} className="flex gap-3">
-            <Link href={`/u/${comment.author.username}`} className="shrink-0">
+            <Link href={`/u/${comment.author.username}`} className="shrink-0" tabIndex={-1} aria-hidden="true">
               <Avatar
                 name={comment.author.display_name}
                 username={comment.author.username}

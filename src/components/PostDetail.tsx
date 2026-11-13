@@ -126,7 +126,7 @@ export function PostDetail({
 
       <div className="flex min-w-0 flex-col">
         <header className="flex items-center gap-3 border-b border-line p-5">
-          <Link href={`/u/${post.author.username}`}>
+          <Link href={`/u/${post.author.username}`} tabIndex={-1} aria-hidden="true">
             <Avatar name={post.author.display_name} username={post.author.username} path={post.author.avatar_path} />
           </Link>
           <div className="min-w-0 flex-1 leading-tight">

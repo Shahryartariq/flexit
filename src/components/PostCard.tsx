@@ -67,7 +67,7 @@ export function PostCard({
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex items-center gap-2.5">
-          <Link href={`/u/${post.author.username}`} className="shrink-0">
+          <Link href={`/u/${post.author.username}`} className="shrink-0" tabIndex={-1} aria-hidden="true">
             <Avatar
               name={post.author.display_name}
               username={post.author.username}
