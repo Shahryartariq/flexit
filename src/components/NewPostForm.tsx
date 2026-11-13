@@ -9,9 +9,24 @@ import { friendlyError } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import { SKILLS, skillColors } from "@/lib/skills";
 import { supabaseBrowser } from "@/lib/supabase/browser";
+import { toast } from "@/lib/toast";
 import { firstIssue, postSchema } from "@/lib/validation";
 
 type Picked = { file: File; url: string };
+
+type Draft = { skill: string; title: string; body: string; link: string };
+
+const DRAFT_KEY = "flexit:draft";
+
+function readDraft(): Draft {
+  const empty = { skill: "", title: "", body: "", link: "" };
+  if (typeof window === "undefined") return empty;
+  try {
+    return { ...empty, ...JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}") };
+  } catch {
+    return empty;
+  }
+}
 
 const PLACEHOLDERS: Record<string, string> = {
   development: "Shipped my first full-stack app",
@@ -31,10 +46,11 @@ const PLACEHOLDERS: Record<string, string> = {
 export function NewPostForm() {
   const session = useSession();
   const router = useRouter();
-  const [skill, setSkill] = useState<string>("");
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [link, setLink] = useState("");
+  const [draft] = useState(readDraft);
+  const [skill, setSkill] = useState<string>(draft.skill);
+  const [title, setTitle] = useState(draft.title);
+  const [body, setBody] = useState(draft.body);
+  const [link, setLink] = useState(draft.link);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -45,10 +61,44 @@ export function NewPostForm() {
     if (session.status === "signed-out") router.replace("/sign-in?next=/new");
   }, [session.status, router]);
 
+  // Keep the text as a draft on this device, so a closed tab doesn't lose it.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        if (skill || title || body || link) {
+          localStorage.setItem(DRAFT_KEY, JSON.stringify({ skill, title, body, link }));
+        } else {
+          localStorage.removeItem(DRAFT_KEY);
+        }
+      } catch {
+        // Storage full or blocked: drafts are a nice-to-have.
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [skill, title, body, link]);
+
+  // Paste a screenshot straight from the clipboard.
+  useEffect(() => {
+    function onPaste(event: ClipboardEvent) {
+      const file = [...(event.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
+      if (file) {
+        event.preventDefault();
+        pickRef.current(file);
+      }
+    }
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
+
   // Free the preview's object URL when it's replaced or the form unmounts.
   useEffect(() => () => {
     if (picked) URL.revokeObjectURL(picked.url);
   }, [picked]);
+
+  const pickRef = useRef(pick);
+  useEffect(() => {
+    pickRef.current = pick;
+  });
 
   function pick(file: File | undefined) {
     if (!file) return;
@@ -93,6 +143,12 @@ export function NewPostForm() {
         .select("id")
         .single();
       if (insertError) throw new Error(insertError.message);
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch {
+        // ignore
+      }
+      toast("Flexed! It's live now.");
       router.push(`/p/${data.id}`);
     } catch (e) {
       if (uploaded) await db.storage.from("post-images").remove([uploaded]);
@@ -191,7 +247,8 @@ export function NewPostForm() {
               <span>
                 <strong className="text-ink">Drop an image</strong> or click to choose
               </span>
-              <span>JPG, PNG or WebP, up to 12 MB. We resize it and remove location data.</span>
+              <span>JPG, PNG or WebP, up to 12 MB. You can also paste a screenshot.</span>
+              <span>We resize it and remove location data.</span>
             </div>
           )}
         </div>
@@ -250,7 +307,10 @@ export function NewPostForm() {
         </p>
       )}
 
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {(title || body || link) && (
+          <span className="mr-auto text-xs text-muted">Draft saved on this device</span>
+        )}
         <Link href="/" className="btn btn-ghost">
           Cancel
         </Link>

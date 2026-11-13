@@ -9,6 +9,8 @@ import { Comments } from "./Comments";
 import { FollowButton } from "./FollowButton";
 import { LikeButton } from "./LikeButton";
 import { SkillChip } from "./SkillChip";
+import { PostEditor } from "./PostEditor";
+import { ReportButton } from "./ReportButton";
 import { useNow } from "@/lib/clock";
 import { isConfigured } from "@/lib/env";
 import { fullDate, linkLabel, timeAgo } from "@/lib/format";
@@ -17,6 +19,7 @@ import { fetchLikedIds, friendlyError } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import { getSkill, skillColors } from "@/lib/skills";
 import { supabaseBrowser } from "@/lib/supabase/browser";
+import { toast } from "@/lib/toast";
 import type { Comment, Post } from "@/lib/types";
 
 export function PostDetail({
@@ -33,7 +36,7 @@ export function PostDetail({
   const now = useNow(serverNow);
   const [post, setPost] = useState(initialPost);
   const [liked, setLiked] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const userId = session.status === "signed-in" ? session.user.id : null;
@@ -77,9 +80,12 @@ export function PostDetail({
         // Fall back to copying when the share sheet is dismissed or unavailable.
       }
     }
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("Link copied");
+    } catch {
+      toast("Couldn't copy the link", { tone: "error" });
+    }
   }
 
   async function remove() {
@@ -94,6 +100,7 @@ export function PostDetail({
       return;
     }
     if (post.image_path) await db.storage.from("post-images").remove([post.image_path]);
+    toast("Flex deleted");
     router.push(`/u/${post.author.username}`);
     router.refresh();
   }
@@ -119,7 +126,7 @@ export function PostDetail({
 
       <div className="flex min-w-0 flex-col">
         <header className="flex items-center gap-3 border-b border-line p-5">
-          <Link href={`/u/${post.author.username}`}>
+          <Link href={`/u/${post.author.username}`} tabIndex={-1} aria-hidden="true">
             <Avatar name={post.author.display_name} username={post.author.username} path={post.author.avatar_path} />
           </Link>
           <div className="min-w-0 flex-1 leading-tight">
@@ -132,12 +139,32 @@ export function PostDetail({
         </header>
 
         <div className="flex flex-col gap-4 p-5">
+          {post.hidden && (
+            <p role="status" className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+              This flex is hidden from everyone else because several people reported it.
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
             <SkillChip slug={post.skill_slug} />
             <time dateTime={post.created_at} title={fullDate(post.created_at)} suppressHydrationWarning>
               {timeAgo(post.created_at, now)}
             </time>
+            {post.edited_at && (
+              <span title={`Edited ${fullDate(post.edited_at)}`}>· edited</span>
+            )}
           </div>
+          {editing ? (
+            <PostEditor
+              post={post}
+              onCancel={() => setEditing(false)}
+              onSaved={(changes) => {
+                setPost((p) => ({ ...p, ...changes }));
+                setEditing(false);
+                toast("Changes saved");
+              }}
+            />
+          ) : (
+            <>
           <h1 className="display text-2xl leading-tight font-extrabold sm:text-3xl">{post.title}</h1>
           {post.body && <p className="text-[1.02rem] whitespace-pre-line">{post.body}</p>}
           {post.link && (
@@ -149,6 +176,8 @@ export function PostDetail({
             >
               Open {linkLabel(post.link)} ↗
             </a>
+          )}
+            </>
           )}
 
           <div className="-ml-2 flex flex-wrap items-center gap-1">
@@ -162,8 +191,14 @@ export function PostDetail({
               }}
             />
             <button type="button" onClick={() => void share()} className="rounded-full px-3 py-1 font-semibold hover:bg-paper">
-              {copied ? "Link copied" : "Share"}
+              Share
             </button>
+            {isOwner && !editing && (
+              <button type="button" onClick={() => setEditing(true)} className="rounded-full px-3 py-1 font-semibold hover:bg-paper">
+                Edit
+              </button>
+            )}
+            {!isOwner && userId && <ReportButton postId={post.id} />}
             {isOwner && (
               <button
                 type="button"

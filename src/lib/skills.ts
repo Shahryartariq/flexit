@@ -28,12 +28,12 @@ export function getSkill(slug: string): Skill {
   return BY_SLUG.get(slug as SkillSlug) ?? SKILLS[SKILLS.length - 1];
 }
 
-/** Background and ink colours for a skill, picked from its hue. */
+/** Background and ink colours for a skill, from its hue; adapts to light and dark themes. */
 export function skillColors(slug: string) {
   const { hue } = getSkill(slug);
   return {
-    background: `oklch(0.93 0.06 ${hue})`,
-    strong: `oklch(0.55 0.17 ${hue})`,
-    ink: `oklch(0.3 0.08 ${hue})`,
+    background: `light-dark(oklch(0.93 0.06 ${hue}), oklch(0.31 0.07 ${hue}))`,
+    strong: `light-dark(oklch(0.52 0.17 ${hue}), oklch(0.62 0.16 ${hue}))`,
+    ink: `light-dark(oklch(0.3 0.08 ${hue}), oklch(0.92 0.05 ${hue}))`,
   };
 }

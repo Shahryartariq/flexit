@@ -3,8 +3,11 @@ import localFont from "next/font/local";
 import Link from "next/link";
 import { Analytics } from "@/components/Analytics";
 import { Logo } from "@/components/Logo";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { Toaster } from "@/components/Toaster";
 import { UserMenu } from "@/components/UserMenu";
 import { SITE_URL } from "@/lib/env";
+import { THEME_SCRIPT } from "@/lib/theme-script";
 import "./globals.css";
 
 const display = localFont({
@@ -43,17 +46,34 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable}`}>
+    <html lang="en" className={`${display.variable} ${body.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-dvh">
         <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 btn btn-ink">
           Skip to content
         </a>
         <header className="sticky top-0 z-30 border-b border-line bg-paper/85 backdrop-blur-md">
-          <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4">
+          <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-3 sm:px-4">
             <Link href="/" aria-label="Flexit home">
               <Logo />
             </Link>
-            <UserMenu />
+            <div className="flex items-center gap-1 sm:gap-1.5">
+              <Link
+                href="/search"
+                aria-label="Search"
+                title="Search"
+                className="inline-flex size-10 items-center justify-center rounded-full text-ink hover:bg-card"
+              >
+                <svg viewBox="0 0 24 24" className="size-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <circle cx="11" cy="11" r="6.5" />
+                  <path d="m16 16 4.5 4.5" />
+                </svg>
+              </Link>
+              <ThemeToggle />
+              <UserMenu />
+            </div>
           </div>
         </header>
         <main id="main" className="mx-auto w-full max-w-6xl px-4 pt-6 pb-16">
@@ -75,6 +95,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             </p>
           </div>
         </footer>
+        <Toaster />
         <Analytics id={process.env.GA_MEASUREMENT_ID} />
       </body>
     </html>

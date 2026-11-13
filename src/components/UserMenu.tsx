@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { Avatar } from "./Avatar";
+import { NotificationBell } from "./NotificationBell";
 import { signOut, useSession } from "@/lib/session";
 
 export function UserMenu() {
@@ -15,12 +16,22 @@ export function UserMenu() {
     function close(event: MouseEvent) {
       if (menu.current?.open && !menu.current.contains(event.target as Node)) menu.current.open = false;
     }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && menu.current?.open) {
+        menu.current.open = false;
+        menu.current.querySelector("summary")?.focus();
+      }
+    }
     document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   if (session.status === "loading") {
-    return <span className="skeleton block h-10 w-36 rounded-full" aria-hidden="true" />;
+    return <span className="skeleton block h-10 w-28 rounded-full" aria-hidden="true" />;
   }
 
   if (session.status === "signed-out") {
@@ -38,9 +49,13 @@ export function UserMenu() {
 
   const profile = session.profile;
   return (
-    <div className="flex items-center gap-2">
-      <Link href="/new" className="btn btn-primary">
-        <span aria-hidden="true">＋</span> Flex it
+    <div className="flex items-center gap-1.5 sm:gap-2">
+      <NotificationBell />
+      <Link href="/new" className="btn btn-primary px-3 sm:px-4" aria-label="Flex it">
+        <span aria-hidden="true">＋</span>
+        <span className="hidden sm:inline" aria-hidden="true">
+          Flex it
+        </span>
       </Link>
       <details ref={menu} className="relative">
         <summary
@@ -66,6 +81,9 @@ export function UserMenu() {
                 Your profile
               </Link>
             )}
+            <Link href="/notifications" className="rounded-lg px-3 py-2 hover:bg-paper">
+              Notifications
+            </Link>
             <Link href="/settings" className="rounded-lg px-3 py-2 hover:bg-paper">
               Edit profile
             </Link>

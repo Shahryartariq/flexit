@@ -281,3 +281,115 @@ describe("deleting an account", () => {
       expect(await tryQuery(db, "select public.delete_my_account()")).toMatch(/permission denied/);
     }));
 });
+
+describe("notifications", () => {
+  it("tell authors about likes, comments and follows, once, and never about themselves", () =>
+    inTransaction(async (db) => {
+      const author = await createUser(db);
+      const fan = await createUser(db);
+      await actAs(db, author);
+      const id = await newPost(db);
+      await db.query("insert into public.likes (post_id) values ($1)", [id]);
+
+      await actAs(db, fan);
+      await db.query("insert into public.likes (post_id) values ($1)", [id]);
+      await db.query("delete from public.likes where post_id = $1", [id]);
+      await db.query("insert into public.likes (post_id) values ($1)", [id]);
+      await db.query("insert into public.comments (post_id, body) values ($1, 'Nice!')", [id]);
+      await db.query("insert into public.follows (following_id) values ($1)", [author]);
+
+      await actAs(db, author);
+      const { rows } = await db.query(
+        "select kind, actor_id from public.notifications order by kind",
+      );
+      expect(rows).toEqual([
+        { kind: "comment", actor_id: fan },
+        { kind: "follow", actor_id: fan },
+        { kind: "like", actor_id: fan },
+      ]);
+    }));
+
+  it("are private to the person they're for", () =>
+    inTransaction(async (db) => {
+      const author = await createUser(db);
+      const fan = await createUser(db);
+      const snoop = await createUser(db);
+      await actAs(db, fan);
+      await db.query("insert into public.follows (following_id) values ($1)", [author]);
+
+      await actAs(db, snoop);
+      expect(await rowCount(db, "select 1 from public.notifications")).toBe(0);
+      expect(await rowCount(db, "update public.notifications set read_at = now()")).toBe(0);
+      await actAs(db, null);
+      expect(await tryQuery(db, "select 1 from public.notifications")).toMatch(/permission denied/);
+
+      await actAs(db, author);
+      expect(await rowCount(db, "update public.notifications set read_at = now()")).toBe(1);
+      expect(await tryQuery(db, "update public.notifications set kind = 'like'")).toMatch(/permission denied/);
+      expect(
+        await tryQuery(db, "insert into public.notifications (recipient_id, actor_id, kind) values ($1, $1, 'follow')", [author]),
+      ).toMatch(/permission denied/);
+    }));
+});
+
+describe("reports", () => {
+  it("hide a flex after three people report it, except from its author", () =>
+    inTransaction(async (db) => {
+      const author = await createUser(db);
+      const reporters = [await createUser(db), await createUser(db), await createUser(db)];
+      await actAs(db, author);
+      const id = await newPost(db);
+      expect(await tryQuery(db, "insert into public.reports (post_id, reason) values ($1, 'spam')", [id])).toMatch(
+        /row-level security/,
+      );
+
+      for (const [i, reporter] of reporters.entries()) {
+        await actAs(db, reporter);
+        await db.query("insert into public.reports (post_id, reason) values ($1, 'spam')", [id]);
+        const visible = await rowCount(db, "select 1 from public.posts where id = $1", [id]);
+        expect(visible).toBe(i < 2 ? 1 : 0);
+      }
+      await actAs(db, null);
+      expect(await rowCount(db, "select 1 from public.posts where id = $1", [id])).toBe(0);
+      await actAs(db, author);
+      expect(await rowCount(db, "select 1 from public.posts where id = $1 and hidden", [id])).toBe(1);
+    }));
+
+  it("can't be repeated or read by others", () =>
+    inTransaction(async (db) => {
+      const author = await createUser(db);
+      const reporter = await createUser(db);
+      const other = await createUser(db);
+      await actAs(db, author);
+      const id = await newPost(db);
+      await actAs(db, reporter);
+      await db.query("insert into public.reports (post_id, reason) values ($1, 'offensive')", [id]);
+      expect(await tryQuery(db, "insert into public.reports (post_id, reason) values ($1, 'spam')", [id])).toMatch(
+        /duplicate key/,
+      );
+      await actAs(db, other);
+      expect(await rowCount(db, "select 1 from public.reports")).toBe(0);
+    }));
+});
+
+describe("editing a flex", () => {
+  it("stamps edited_at only when the content changes", () =>
+    inTransaction(async (db) => {
+      const author = await createUser(db);
+      const fan = await createUser(db);
+      await actAs(db, author);
+      const id = await newPost(db);
+      await actAs(db, fan);
+      await db.query("insert into public.likes (post_id) values ($1)", [id]);
+      let { rows } = await db.query("select edited_at from public.posts where id = $1", [id]);
+      expect(rows[0].edited_at).toBeNull();
+
+      await actAs(db, author);
+      await db.query("update public.posts set body = 'Now with more detail' where id = $1", [id]);
+      ({ rows } = await db.query("select edited_at from public.posts where id = $1", [id]));
+      expect(rows[0].edited_at).not.toBeNull();
+      expect(await tryQuery(db, "update public.posts set hidden = false where id = $1", [id])).toMatch(
+        /permission denied/,
+      );
+    }));
+});

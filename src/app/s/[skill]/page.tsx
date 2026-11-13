@@ -54,5 +54,5 @@ async function SkillFeed({ slug, name }: { slug: string; name: string }) {
   await connection();
   if (!isConfigured) return <SetupNotice />;
   const posts = await fetchPosts(supabasePublic(), { skill: slug });
-  return <Feed key={slug} initialPosts={posts} serverNow={requestTime()} skill={slug} empty={<EmptyFeed skillName={name} />} />;
+  return <Feed key={slug} initialPosts={posts} serverNow={requestTime()} skill={slug} showSort empty={<EmptyFeed skillName={name} />} />;
 }

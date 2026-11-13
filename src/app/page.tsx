@@ -16,7 +16,7 @@ export default function Home() {
     <div className="flex flex-col gap-8">
       <section className="flex flex-col gap-5 pt-4 sm:pt-8">
         <h1 className="display max-w-3xl text-[2.6rem] leading-[0.95] font-extrabold sm:text-6xl">
-          Made something? <span className="text-accent">Flex&nbsp;it.</span>
+          Made something? <span className="text-accent-strong">Flex&nbsp;it.</span>
         </h1>
         <p className="max-w-xl text-lg text-muted">
           Share what you built, learned or finally finished, in any skill. Code, art, music, a personal best, a
@@ -52,5 +52,5 @@ async function HomeFeed() {
   await connection();
   if (!isConfigured) return <SetupNotice />;
   const posts = await fetchPosts(supabasePublic());
-  return <Feed initialPosts={posts} serverNow={requestTime()} showTabs empty={<EmptyFeed />} />;
+  return <Feed initialPosts={posts} serverNow={requestTime()} showTabs showSort empty={<EmptyFeed />} />;
 }
