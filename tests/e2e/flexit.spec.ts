@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 const stamp = Date.now().toString(36).slice(-6);
@@ -12,6 +13,22 @@ async function signUp(page: Page, name: string, username: string) {
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).toHaveURL(/\/new$/);
+}
+
+async function signIn(page: Page, username: string) {
+  await page.goto("/sign-in");
+  await page.getByLabel("Email").fill(`${username}@example.com`);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("link", { name: "Flex it" })).toBeVisible();
+}
+
+async function expectAccessible(page: Page) {
+  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+  const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+  expect(
+    serious.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).slice(0, 3).join(", ")}`),
+  ).toEqual([]);
 }
 
 async function newContext(browser: Browser) {
@@ -192,6 +209,103 @@ test("unknown flexes and people show a 404 page", async ({ page }) => {
   await expect(page.getByText("Nothing to flex here")).toBeVisible();
 });
 
+test("notifications arrive live and fill the inbox", async ({ browser }) => {
+  const author = await newContext(browser);
+  await signIn(author.page, maker.username);
+  // Ali followed Sara earlier, so there's already something waiting.
+  await expect(author.page.getByTestId("unread-count")).toBeVisible();
+
+  const fanSide = await newContext(browser);
+  await signIn(fanSide.page, fan.username);
+  await fanSide.page.goto(`/u/${maker.username}`);
+  const card = fanSide.page.getByTestId("post-card").filter({ hasText: `Shipped my first app ${stamp}` });
+  await card.getByRole("button", { name: "Like" }).click();
+
+  // Sara gets a toast without reloading.
+  await expect(author.page.getByText(`${fan.name} liked “Shipped my first app ${stamp}”`)).toBeVisible();
+
+  await author.page.getByRole("link", { name: /Notifications/ }).first().click();
+  const inbox = author.page.getByTestId("notifications");
+  await expect(inbox.getByText(`${fan.name} started following you`)).toBeVisible();
+  await expect(inbox.getByText(`${fan.name} liked “Shipped my first app ${stamp}”`)).toBeVisible();
+  await expect(author.page.getByTestId("unread-count")).toHaveCount(0);
+  await expectAccessible(author.page);
+
+  await fanSide.context.close();
+  await author.context.close();
+});
+
+test("authors can edit a flex and readers can report one", async ({ browser }) => {
+  const author = await newContext(browser);
+  await signIn(author.page, maker.username);
+  await author.page.goto(`/u/${maker.username}`);
+  const href = await author.page
+    .getByTestId("feed")
+    .getByRole("link", { name: `Shipped my first app ${stamp}` })
+    .getAttribute("href");
+  await author.page.goto(href!);
+  await author.page.getByRole("button", { name: "Edit", exact: true }).click();
+  await author.page.getByLabel("Title").fill(`Shipped my first real app ${stamp}`);
+  await author.page.getByRole("button", { name: "Save changes" }).click();
+  await expect(author.page.getByRole("heading", { level: 1, name: `Shipped my first real app ${stamp}` })).toBeVisible();
+  await expect(author.page.getByText("· edited")).toBeVisible();
+  await expect(author.page.getByRole("button", { name: "Report" })).toHaveCount(0);
+  await expectAccessible(author.page);
+
+  const reader = await newContext(browser);
+  await signIn(reader.page, fan.username);
+  await reader.page.goto(href!);
+  await reader.page.getByRole("button", { name: "Report" }).click();
+  await reader.page.getByLabel("Spam or an ad").check();
+  await reader.page.getByRole("button", { name: "Send report" }).click();
+  await expect(reader.page.getByText("Thanks. We'll take a look.")).toBeVisible();
+  // One report doesn't hide anything.
+  await reader.page.reload();
+  await expect(reader.page.getByRole("heading", { level: 1, name: `Shipped my first real app ${stamp}` })).toBeVisible();
+
+  await reader.context.close();
+  await author.context.close();
+});
+
+test("search finds people and flexes", async ({ page }) => {
+  await page.goto("/search");
+  await expect(page.getByRole("heading", { name: "Browse by skill" })).toBeVisible();
+  await page.getByLabel("Search people and flexes").fill(maker.username);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const results = page.getByTestId("search-results");
+  await expect(results.getByRole("link", { name: new RegExp(maker.name) })).toBeVisible();
+
+  await page.goto(`/search?q=${encodeURIComponent(`real app ${stamp}`)}`);
+  await expect(page.getByTestId("search-results").getByText(`Shipped my first real app ${stamp}`).first()).toBeVisible();
+  await expectAccessible(page);
+});
+
+test("the feed sorts by top this week", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Top this week" }).click();
+  await expect(page.getByRole("button", { name: "Top this week" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("feed").getByText(`Shipped my first real app ${stamp}`)).toBeVisible();
+});
+
+test("dark mode is remembered and stays readable", async ({ page }) => {
+  await page.goto("/");
+  await expectAccessible(page);
+  const toggle = page.locator("[data-theme-choice]");
+  await expect(toggle).toHaveAttribute("data-theme-choice", "system");
+  await toggle.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await toggle.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(toggle).toHaveAttribute("data-theme-choice", "dark");
+  await expectAccessible(page);
+  await page.goto(`/u/${maker.username}`);
+  await expectAccessible(page);
+  await toggle.click();
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme", /./);
+});
+
 test("share images, sitemap and privacy page are served", async ({ request, page }) => {
   const og = await request.get("/opengraph-image");
   expect(og.status()).toBe(200);
@@ -226,6 +340,6 @@ test("people can delete their account and everything goes with it", async ({ bro
   await page.goto(`/u/${maker.username}`);
   await expect(page.getByText("Nothing to flex here")).toBeVisible();
   await page.goto("/");
-  await expect(page.getByText(`Shipped my first app ${stamp}`)).toHaveCount(0);
+  await expect(page.getByText(`Shipped my first real app ${stamp}`)).toHaveCount(0);
   await context.close();
 });

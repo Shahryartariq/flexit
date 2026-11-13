@@ -18,7 +18,7 @@ export function Logo() {
   return (
     <span className="inline-flex items-center gap-2">
       <LogoMark />
-      <span className="display text-[1.35rem] font-extrabold lowercase">flexit</span>
+      <span className="display hidden text-[1.35rem] font-extrabold lowercase min-[400px]:inline">flexit</span>
     </span>
   );
 }

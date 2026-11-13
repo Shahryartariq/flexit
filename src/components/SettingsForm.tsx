@@ -243,7 +243,7 @@ function DeleteAccount({ userId, username }: { userId: string; username: string 
       )}
       <button
         type="button"
-        className="btn self-start bg-danger text-white"
+        className="btn self-start bg-danger text-accent-ink"
         disabled={busy || confirm.trim().toLowerCase() !== username}
         onClick={() => void remove()}
       >

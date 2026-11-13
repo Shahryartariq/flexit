@@ -7,21 +7,36 @@ export type FeedFilter = {
   skill?: string;
   authorIds?: string[];
   authorId?: string;
-  /** created_at of the last post already shown; loads older ones. */
+  /** created_at of the last post already shown; loads older ones (latest sort). */
   before?: string;
+  /** "top": most liked in the last 7 days; pages with `offset`. */
+  sort?: FeedSort;
+  offset?: number;
   limit?: number;
 };
 
+export type FeedSort = "latest" | "top";
+
+export const TOP_WINDOW_DAYS = 7;
+
 export async function fetchPosts(db: SupabaseClient, filter: FeedFilter = {}): Promise<Post[]> {
-  let query = db
-    .from("posts")
-    .select(POST_SELECT)
-    .order("created_at", { ascending: false })
-    .limit(filter.limit ?? PAGE_SIZE);
+  const limit = filter.limit ?? PAGE_SIZE;
+  let query = db.from("posts").select(POST_SELECT);
+  if (filter.sort === "top") {
+    const since = new Date(Date.now() - TOP_WINDOW_DAYS * 24 * 3600 * 1000).toISOString();
+    const offset = filter.offset ?? 0;
+    query = query
+      .gte("created_at", since)
+      .order("like_count", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+  } else {
+    query = query.order("created_at", { ascending: false }).limit(limit);
+    if (filter.before) query = query.lt("created_at", filter.before);
+  }
   if (filter.skill) query = query.eq("skill_slug", filter.skill);
   if (filter.authorId) query = query.eq("author_id", filter.authorId);
   if (filter.authorIds) query = query.in("author_id", filter.authorIds);
-  if (filter.before) query = query.lt("created_at", filter.before);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as Post[];
@@ -98,4 +113,36 @@ export function friendlyError(message: string) {
   if (/check constraint/.test(message)) return "Something in that form isn't allowed. Check the fields and try again.";
   if (/Failed to fetch|NetworkError|fetch failed/i.test(message)) return "Couldn't reach the server. Check your connection.";
   return "Something went wrong. Please try again.";
+}
+
+/** Strips characters that have meaning in PostgREST filters and LIKE patterns. */
+export function cleanSearch(raw: string) {
+  return raw
+    .replace(/[,()*%_\\:."']/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+}
+
+export async function searchAll(db: SupabaseClient, raw: string) {
+  const q = cleanSearch(raw);
+  if (q.length < 2) return { q, people: [] as Profile[], posts: [] as Post[] };
+  const pattern = `%${q}%`;
+  const [people, posts] = await Promise.all([
+    db
+      .from("profiles")
+      .select("id, username, display_name, avatar_path, headline, bio, created_at")
+      .or(`username.ilike.${pattern},display_name.ilike.${pattern},headline.ilike.${pattern}`)
+      .limit(12),
+    db
+      .from("posts")
+      .select(POST_SELECT)
+      .or(`title.ilike.${pattern},body.ilike.${pattern}`)
+      .order("like_count", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(24),
+  ]);
+  if (people.error) throw new Error(people.error.message);
+  if (posts.error) throw new Error(posts.error.message);
+  return { q, people: (people.data ?? []) as Profile[], posts: (posts.data ?? []) as unknown as Post[] };
 }

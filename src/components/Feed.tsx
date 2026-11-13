@@ -6,7 +6,7 @@ import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { PostCard } from "./PostCard";
 import { useNow } from "@/lib/clock";
 import { isConfigured } from "@/lib/env";
-import { fetchFollowingIds, fetchLikedIds, fetchPost, fetchPosts, PAGE_SIZE } from "@/lib/queries";
+import { fetchFollowingIds, fetchLikedIds, fetchPost, fetchPosts, PAGE_SIZE, type FeedSort } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import type { Post } from "@/lib/types";
@@ -26,6 +26,9 @@ export function Feed({
   skill,
   authorId,
   showTabs = false,
+  showSort = false,
+  live = true,
+  pageable = true,
   empty,
 }: {
   initialPosts: Post[];
@@ -33,6 +36,12 @@ export function Feed({
   skill?: string;
   authorId?: string;
   showTabs?: boolean;
+  /** Offer "Latest / Top this week". */
+  showSort?: boolean;
+  /** Listen for new flexes and count changes over Realtime. */
+  live?: boolean;
+  /** Load older flexes as the person scrolls. */
+  pageable?: boolean;
   empty: React.ReactNode;
 }) {
   const session = useSession();
@@ -40,15 +49,17 @@ export function Feed({
   const userId = session.status === "signed-in" ? session.user.id : null;
 
   const [tab, setTab] = useState<Tab>("everyone");
+  const [sort, setSort] = useState<FeedSort>("latest");
   const [posts, setPosts] = useState(initialPosts);
   const [pending, setPending] = useState<Post[]>([]);
   const [fresh, setFresh] = useState<Set<string>>(() => new Set());
   const [liked, setLiked] = useState<Set<string>>(() => new Set());
-  const [hasMore, setHasMore] = useState(initialPosts.length === PAGE_SIZE);
+  const [hasMore, setHasMore] = useState(pageable && initialPosts.length === PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [followingIds, setFollowingIds] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const checkedLikes = useRef(new Set<string>());
+  const sentinel = useRef<HTMLDivElement>(null);
 
   const followingSet = useMemo(() => new Set(followingIds ?? []), [followingIds]);
   const filter = useMemo(
@@ -56,8 +67,9 @@ export function Feed({
       skill,
       authorId,
       authorIds: tab === "following" ? (followingIds ?? []) : undefined,
+      sort,
     }),
-    [skill, authorId, tab, followingIds],
+    [skill, authorId, tab, followingIds, sort],
   );
 
   // Which of the visible posts has the signed-in person liked?
@@ -79,7 +91,7 @@ export function Feed({
 
   // Live updates.
   useEffect(() => {
-    if (!isConfigured) return;
+    if (!isConfigured || !live) return;
     const db = supabaseBrowser();
     const channel = db.channel(`feed-${skill ?? "all"}-${authorId ?? "everyone"}-${Math.random().toString(36).slice(2)}`);
     const serverFilter = skill ? `skill_slug=eq.${skill}` : authorId ? `author_id=eq.${authorId}` : undefined;
@@ -124,10 +136,10 @@ export function Feed({
     return () => {
       void db.removeChannel(channel);
     };
-  }, [skill, authorId]);
+  }, [skill, authorId, live]);
 
   const visiblePending =
-    tab === "following" ? pending.filter((p) => followingSet.has(p.author_id)) : pending;
+    sort === "top" ? [] : tab === "following" ? pending.filter((p) => followingSet.has(p.author_id)) : pending;
 
   function showPending() {
     const ids = new Set(visiblePending.map((p) => p.id));
@@ -137,25 +149,31 @@ export function Feed({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function switchTab(next: Tab) {
-    if (next === tab || loading) return;
+  async function reload(nextTab: Tab, nextSort: FeedSort) {
+    if ((nextTab === tab && nextSort === sort) || loading) return;
     setError(null);
     setLoading(true);
     try {
       const db = supabaseBrowser();
       let ids = followingIds;
-      if (next === "following" && userId && ids === null) {
+      if (nextTab === "following" && userId && ids === null) {
         ids = await fetchFollowingIds(db, userId);
         setFollowingIds(ids);
       }
       const list =
-        next === "following" && (!ids || ids.length === 0)
+        nextTab === "following" && (!ids || ids.length === 0)
           ? []
-          : await fetchPosts(db, { skill, authorId, authorIds: next === "following" ? (ids ?? []) : undefined });
-      setTab(next);
+          : await fetchPosts(db, {
+              skill,
+              authorId,
+              sort: nextSort,
+              authorIds: nextTab === "following" ? (ids ?? []) : undefined,
+            });
+      setTab(nextTab);
+      setSort(nextSort);
       setPosts(list);
       setFresh(new Set());
-      setHasMore(list.length === PAGE_SIZE);
+      setHasMore(pageable && list.length === PAGE_SIZE);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't load the feed.");
     } finally {
@@ -163,13 +181,21 @@ export function Feed({
     }
   }
 
+  const loadMoreRef = useRef(loadMore);
+  useEffect(() => {
+    loadMoreRef.current = loadMore;
+  });
+
   async function loadMore() {
     const last = posts.at(-1);
     if (!last || loading) return;
     setLoading(true);
     setError(null);
     try {
-      const more = await fetchPosts(supabaseBrowser(), { ...filter, before: last.created_at });
+      const more = await fetchPosts(
+        supabaseBrowser(),
+        sort === "top" ? { ...filter, offset: posts.length } : { ...filter, before: last.created_at },
+      );
       setPosts((list) => [...list, ...more.filter((p) => !list.some((q) => q.id === p.id))]);
       setHasMore(more.length === PAGE_SIZE);
     } catch (e) {
@@ -178,6 +204,20 @@ export function Feed({
       setLoading(false);
     }
   }
+
+  // Load the next page when the bottom of the grid scrolls into view.
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node || !hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) void loadMoreRef.current();
+      },
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore]);
 
   function setLike(post: Post, isLiked: boolean) {
     setLiked((current) => {
@@ -196,25 +236,46 @@ export function Feed({
 
   return (
     <div className="flex flex-col gap-5">
-      {showTabs && (
-        <div className="flex items-center gap-2" role="tablist" aria-label="Whose flexes">
-          {(["everyone", "following"] as const).map((name) => {
-            const disabled = name === "following" && !userId;
-            return (
-              <button
-                key={name}
-                type="button"
-                role="tab"
-                aria-selected={tab === name}
-                disabled={disabled}
-                title={disabled ? "Sign in to see people you follow" : undefined}
-                onClick={() => void switchTab(name)}
-                className={`btn px-4 py-2 text-sm ${tab === name ? "btn-ink" : "btn-ghost"}`}
-              >
-                {name === "everyone" ? "Everyone" : "Following"}
-              </button>
-            );
-          })}
+      {(showTabs || showSort) && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {showTabs ? (
+            <div className="flex items-center gap-2" role="tablist" aria-label="Whose flexes">
+              {(["everyone", "following"] as const).map((name) => {
+                const disabled = name === "following" && !userId;
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === name}
+                    disabled={disabled}
+                    title={disabled ? "Sign in to see people you follow" : undefined}
+                    onClick={() => void reload(name, sort)}
+                    className={`btn px-4 py-2 text-sm ${tab === name ? "btn-ink" : "btn-ghost"}`}
+                  >
+                    {name === "everyone" ? "Everyone" : "Following"}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <span />
+          )}
+          {showSort && (
+            <div className="flex items-center rounded-full border-[1.5px] border-line bg-card p-1 text-sm" role="group" aria-label="Sort flexes">
+              {(["latest", "top"] as const).map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  aria-pressed={sort === name}
+                  onClick={() => void reload(tab, name)}
+                  className={`rounded-full px-3 py-1.5 font-semibold transition-colors ${sort === name ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
+                >
+                  {name === "latest" ? "Latest" : "Top this week"}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -233,7 +294,12 @@ export function Feed({
       )}
 
       {posts.length === 0 ? (
-        tab === "following" ? (
+        sort === "top" ? (
+          <div className="card px-6 py-12 text-center">
+            <p className="display text-xl font-bold">Nothing in the last 7 days yet.</p>
+            <p className="mt-2 text-muted">Switch to Latest to see older flexes.</p>
+          </div>
+        ) : tab === "following" ? (
           <div className="card px-6 py-12 text-center">
             <p className="display text-xl font-bold">Nothing from people you follow yet.</p>
             <p className="mt-2 text-muted">Follow makers from their profile to fill this tab.</p>
@@ -260,7 +326,7 @@ export function Feed({
       )}
 
       {hasMore && posts.length > 0 && (
-        <div className="flex justify-center">
+        <div ref={sentinel} className="flex justify-center">
           <button type="button" className="btn btn-ghost" onClick={() => void loadMore()} disabled={loading}>
             {loading ? "Loading…" : "Load more"}
           </button>
