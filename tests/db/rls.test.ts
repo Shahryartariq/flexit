@@ -3,6 +3,12 @@ import { actAs, closePool, createUser, inTransaction, rowCount, tryQuery, type D
 
 afterAll(closePool);
 
+/** Makes accounts look older than a day (only those count towards hiding a flex). */
+async function ageAccounts(db: Db, ids: string[]) {
+  await db.query("reset role");
+  await db.query("update public.profiles set created_at = now() - interval '2 days' where id = any($1::uuid[])", [ids]);
+}
+
 async function newPost(db: Db, title = "Shipped my first app") {
   const { rows } = await db.query(
     "insert into public.posts (skill_slug, title, body) values ('development', $1, 'It works!') returning id",
@@ -337,6 +343,7 @@ describe("reports", () => {
     inTransaction(async (db) => {
       const author = await createUser(db);
       const reporters = [await createUser(db), await createUser(db), await createUser(db)];
+      await ageAccounts(db, reporters);
       await actAs(db, author);
       const id = await newPost(db);
       expect(await tryQuery(db, "insert into public.reports (post_id, reason) values ($1, 'spam')", [id])).toMatch(
@@ -369,6 +376,83 @@ describe("reports", () => {
       );
       await actAs(db, other);
       expect(await rowCount(db, "select 1 from public.reports")).toBe(0);
+    }));
+});
+
+describe("hardening", () => {
+  it("ignores reports from accounts younger than a day when hiding", () =>
+    inTransaction(async (db) => {
+      const author = await createUser(db);
+      const fresh = [await createUser(db), await createUser(db), await createUser(db)];
+      await actAs(db, author);
+      const id = await newPost(db);
+      for (const reporter of fresh) {
+        await actAs(db, reporter);
+        await db.query("insert into public.reports (post_id, reason) values ($1, 'spam')", [id]);
+      }
+      await actAs(db, null);
+      expect(await rowCount(db, "select 1 from public.posts where id = $1", [id])).toBe(1);
+    }));
+
+  it("blocks likes, comments and reports on a hidden flex and hides its comments", () =>
+    inTransaction(async (db) => {
+      const author = await createUser(db);
+      const fan = await createUser(db);
+      await actAs(db, author);
+      const id = await newPost(db);
+      await actAs(db, fan);
+      await db.query("insert into public.likes (post_id) values ($1)", [id]);
+      await db.query("insert into public.comments (post_id, body) values ($1, 'Nice')", [id]);
+      await db.query("reset role");
+      await db.query("update public.posts set hidden = true where id = $1", [id]);
+
+      await actAs(db, fan);
+      expect(await rowCount(db, "select 1 from public.comments where post_id = $1", [id])).toBe(0);
+      expect(await rowCount(db, "select 1 from public.likes where post_id = $1", [id])).toBe(0);
+      await db.query("delete from public.likes where post_id = $1", [id]);
+      expect(await tryQuery(db, "insert into public.likes (post_id) values ($1)", [id])).toMatch(/row-level security/);
+      expect(
+        await tryQuery(db, "insert into public.comments (post_id, body) values ($1, 'Again')", [id]),
+      ).toMatch(/row-level security/);
+      expect(
+        await tryQuery(db, "insert into public.reports (post_id, reason) values ($1, 'spam')", [id]),
+      ).toMatch(/row-level security/);
+
+      await actAs(db, null);
+      expect(await rowCount(db, "select 1 from public.comments where post_id = $1", [id])).toBe(0);
+      await actAs(db, author);
+      expect(await rowCount(db, "select 1 from public.comments where post_id = $1", [id])).toBe(1);
+    }));
+
+  it("rate-limits likes, follows and reports", () =>
+    inTransaction(async (db) => {
+      const actor = await createUser(db);
+      const author = await createUser(db);
+      await db.query("reset role");
+      // 301 older flexes (older than the post rate-limit window) to like and report.
+      const { rows } = await db.query(
+        "insert into public.posts (author_id, skill_slug, title, created_at) select $1, 'art', 'Flex ' || g, now() - interval '2 hours' from generate_series(1, 301) g returning id",
+        [author],
+      );
+      const ids = rows.map((r) => r.id as string);
+      await db.query("insert into public.likes (post_id, user_id) select unnest($1::uuid[]), $2", [ids.slice(0, 300), actor]);
+      await db.query(
+        "insert into public.reports (post_id, reporter_id, reason) select unnest($1::uuid[]), $2, 'spam'",
+        [ids.slice(0, 20), actor],
+      );
+      const people = [];
+      for (let i = 0; i < 100; i++) people.push(await createUser(db));
+      await db.query("reset role");
+      await db.query("insert into public.follows (follower_id, following_id) select $1, unnest($2::uuid[])", [actor, people]);
+
+      await actAs(db, actor);
+      expect(await tryQuery(db, "insert into public.likes (post_id) values ($1)", [ids[300]])).toMatch(/300 flexes an hour/);
+      expect(
+        await tryQuery(db, "insert into public.reports (post_id, reason) values ($1, 'spam')", [ids[300]]),
+      ).toMatch(/20 reports a day/);
+      expect(
+        await tryQuery(db, "insert into public.follows (following_id) values ($1)", [author]),
+      ).toMatch(/100 people an hour/);
     }));
 });
 

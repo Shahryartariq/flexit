@@ -9,7 +9,7 @@ import { ACCEPTED_TYPES, imagePath, MAX_UPLOAD_BYTES } from "@/lib/images";
 import { friendlyError } from "@/lib/queries";
 import { refreshProfile, signOut, useSession } from "@/lib/session";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { firstIssue, profileSchema } from "@/lib/validation";
+import { firstIssue, passwordSchema, profileSchema } from "@/lib/validation";
 
 export function SettingsForm() {
   const session = useSession();
@@ -184,8 +184,78 @@ function Editor() {
         </button>
       </section>
 
+      {session.user.email && <ChangePassword email={session.user.email} />}
+
       <DeleteAccount userId={userId} username={profile.username} />
     </div>
+  );
+}
+
+/** Checks the current password, then sets a new one. */
+function ChangePassword({ email }: { email: string }) {
+  const [form, setForm] = useState({ current: "", next: "", repeat: "" });
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    const parsed = passwordSchema.safeParse(form.next);
+    if (!parsed.success) return setMessage({ kind: "error", text: firstIssue(parsed.error) });
+    if (form.next !== form.repeat) return setMessage({ kind: "error", text: "The new passwords don't match." });
+    if (form.next === form.current) return setMessage({ kind: "error", text: "Pick a password you haven't used here." });
+    setBusy(true);
+    setMessage(null);
+    const auth = supabaseBrowser().auth;
+    const check = await auth.signInWithPassword({ email, password: form.current });
+    if (check.error) {
+      setBusy(false);
+      return setMessage({ kind: "error", text: "Your current password isn't right." });
+    }
+    const { error } = await auth.updateUser({ password: parsed.data });
+    setBusy(false);
+    if (error) return setMessage({ kind: "error", text: /password/i.test(error.message) ? error.message : friendlyError(error.message) });
+    setForm({ current: "", next: "", repeat: "" });
+    setMessage({ kind: "ok", text: "Password changed." });
+  }
+
+  const field = (key: keyof typeof form, label: string, autoComplete: string) => (
+    <label className="flex flex-col gap-1.5 text-sm font-semibold">
+      {label}
+      <input
+        className="field font-normal"
+        type="password"
+        autoComplete={autoComplete}
+        required
+        minLength={key === "current" ? undefined : 8}
+        value={form[key]}
+        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+      />
+    </label>
+  );
+
+  return (
+    <section className="card p-6" aria-labelledby="password-title">
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <h2 id="password-title" className="font-semibold">
+          Change password
+        </h2>
+        {field("current", "Current password", "current-password")}
+        <div className="grid gap-4 sm:grid-cols-2">
+          {field("next", "New password", "new-password")}
+          {field("repeat", "Repeat new password", "new-password")}
+        </div>
+        {message && (
+          <p role={message.kind === "error" ? "alert" : "status"} className={`text-sm ${message.kind === "error" ? "text-danger" : "text-muted"}`}>
+            {message.text}
+          </p>
+        )}
+        <div className="flex justify-end">
+          <button type="submit" className="btn btn-ghost" disabled={busy}>
+            {busy ? "Changing…" : "Change password"}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -202,9 +272,15 @@ function DeleteAccount({ userId, username }: { userId: string; username: string 
     const db = supabaseBrowser();
     try {
       for (const bucket of ["post-images", "avatars"] as const) {
-        const { data } = await db.storage.from(bucket).list(userId, { limit: 1000 });
-        const paths = (data ?? []).map((file) => `${userId}/${file.name}`);
-        if (paths.length) await db.storage.from(bucket).remove(paths);
+        // Removing shifts the listing, so keep taking the first page until it's empty.
+        for (let round = 0; round < 100; round++) {
+          const { data, error: listError } = await db.storage.from(bucket).list(userId, { limit: 1000 });
+          if (listError) throw new Error(listError.message);
+          const paths = (data ?? []).map((file) => `${userId}/${file.name}`);
+          if (!paths.length) break;
+          const { error: removeError } = await db.storage.from(bucket).remove(paths);
+          if (removeError) throw new Error(removeError.message);
+        }
       }
       const { error: failure } = await db.rpc("delete_my_account");
       if (failure) throw new Error(failure.message);

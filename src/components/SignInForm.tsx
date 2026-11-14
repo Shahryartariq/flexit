@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { GitHubButton } from "./GitHubButton";
-import { isConfigured } from "@/lib/env";
+import { isConfigured, PASSWORD_RESET } from "@/lib/env";
 import { safeNext } from "@/lib/next-path";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 
@@ -56,7 +56,14 @@ export function SignInForm() {
         />
       </label>
       <label className="flex flex-col gap-1.5 text-sm font-semibold">
-        Password
+        <span className="flex items-center justify-between">
+          Password
+          {PASSWORD_RESET && (
+            <Link href="/forgot-password" className="text-xs font-normal text-muted underline hover:text-ink">
+              Forgot password?
+            </Link>
+          )}
+        </span>
         <input
           className="field font-normal"
           type="password"

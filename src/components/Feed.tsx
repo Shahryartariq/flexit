@@ -182,9 +182,23 @@ export function Feed({
   }
 
   const loadMoreRef = useRef(loadMore);
+  const reloadRef = useRef(reload);
   useEffect(() => {
     loadMoreRef.current = loadMore;
+    reloadRef.current = reload;
   });
+
+  // Signing out (or switching account) leaves the Following tab: it belonged to the old account.
+  const lastUser = useRef(userId);
+  useEffect(() => {
+    if (lastUser.current === userId) return;
+    const wasSignedIn = lastUser.current !== null;
+    lastUser.current = userId;
+    if (wasSignedIn) {
+      setFollowingIds(null);
+      if (tab === "following") void reloadRef.current("everyone", sort);
+    }
+  }, [userId, tab, sort]);
 
   async function loadMore() {
     const last = posts.at(-1);
@@ -309,11 +323,12 @@ export function Feed({
         )
       ) : (
         <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3" data-testid="feed">
-          {posts.map((post) => (
+          {posts.map((post, index) => (
             <li key={post.id} className="flex">
               <div className="flex w-full">
                 <PostCardSlot
                   post={post}
+                  priority={index < 3}
                   liked={liked.has(post.id)}
                   onLike={(value) => setLike(post, value)}
                   now={now}

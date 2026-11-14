@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -5,15 +6,32 @@ import { EmptyFeed, Feed } from "@/components/Feed";
 import { FeedSkeleton } from "@/components/FeedSkeleton";
 import { SetupNotice } from "@/components/SetupNotice";
 import { SkillBar } from "@/components/SkillBar";
-import { isConfigured } from "@/lib/env";
+import { isConfigured, SITE_URL } from "@/lib/env";
+import { toJsonLd } from "@/lib/json-ld";
 import { fetchPosts } from "@/lib/queries";
 import { SKILLS } from "@/lib/skills";
 import { requestTime } from "@/lib/request-time";
 import { supabasePublic } from "@/lib/supabase/public";
 
+export const metadata: Metadata = { alternates: { canonical: "/" } };
+
+const WEBSITE_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Flexit",
+  url: `${SITE_URL}/`,
+  description: "Share what you made, learned or achieved, in any skill.",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: { "@type": "EntryPoint", urlTemplate: `${SITE_URL}/search?q={search_term_string}` },
+    "query-input": "required name=search_term_string",
+  },
+};
+
 export default function Home() {
   return (
     <div className="flex flex-col gap-8">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: toJsonLd(WEBSITE_JSON_LD) }} />
       <section className="flex flex-col gap-5 pt-4 sm:pt-8">
         <h1 className="display max-w-3xl text-[2.6rem] leading-[0.95] font-extrabold sm:text-6xl">
           Made something? <span className="text-accent-strong">Flex&nbsp;it.</span>

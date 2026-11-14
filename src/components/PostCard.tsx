@@ -1,9 +1,12 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 import { Avatar } from "./Avatar";
 import { LikeButton } from "./LikeButton";
 import { SkillChip } from "./SkillChip";
 import { count, timeAgo } from "@/lib/format";
-import { publicImageUrl } from "@/lib/images";
+import { publicImageUrl, thumbPath } from "@/lib/images";
 import { getSkill, skillColors } from "@/lib/skills";
 import type { Post } from "@/lib/types";
 
@@ -28,12 +31,15 @@ export function PostCard({
   onLike,
   now,
   fresh = false,
+  priority = false,
 }: {
   post: Post;
   liked: boolean;
   onLike: (liked: boolean) => void;
   now: number;
   fresh?: boolean;
+  /** Above the fold: load the photo right away instead of lazily. */
+  priority?: boolean;
 }) {
   const image = publicImageUrl("post-images", post.image_path);
   const colors = skillColors(post.skill_slug);
@@ -44,14 +50,7 @@ export function PostCard({
     <article className={`card flex flex-col overflow-hidden ${fresh ? "rise-in" : ""}`} data-testid="post-card">
       <Link href={href} className="group relative block aspect-[4/5] overflow-hidden" tabIndex={-1} aria-hidden="true">
         {image ? (
-          // eslint-disable-next-line @next/next/no-img-element -- resized to 1600px on upload
-          <img
-            src={image}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-          />
+          <CardImage path={post.image_path!} full={image} priority={priority} />
         ) : (
           <div
             className="flex size-full flex-col justify-between p-5"
@@ -116,5 +115,33 @@ export function PostCard({
         </div>
       </div>
     </article>
+  );
+}
+
+/**
+ * The card-sized copy of a flex photo (800px), falling back to the full photo
+ * for flexes posted before small copies existed.
+ */
+function CardImage({ path, full, priority }: { path: string; full: string; priority: boolean }) {
+  const small = publicImageUrl("post-images", thumbPath(path)) ?? full;
+  const [src, setSrc] = useState(small);
+  const fallback = () => setSrc((current) => (current === full ? current : full));
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- already resized on upload; Supabase serves it
+    <img
+      ref={(node) => {
+        // The error may fire before hydration attaches onError.
+        if (node?.complete && node.naturalWidth === 0 && node.src === small) fallback();
+      }}
+      src={src}
+      alt=""
+      width={640}
+      height={800}
+      loading={priority ? "eager" : "lazy"}
+      fetchPriority={priority ? "high" : "auto"}
+      decoding="async"
+      onError={fallback}
+      className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+    />
   );
 }

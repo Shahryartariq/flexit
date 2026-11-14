@@ -13,7 +13,7 @@ import "./globals.css";
 const display = localFont({
   src: "./fonts/anybody.woff2",
   variable: "--font-display-face",
-  weight: "100 900",
+  weight: "700 800",
   display: "swap",
 });
 

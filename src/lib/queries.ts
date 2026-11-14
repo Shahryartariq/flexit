@@ -72,23 +72,6 @@ export async function fetchProfile(db: SupabaseClient, username: string): Promis
   return data as Profile | null;
 }
 
-export async function fetchFollowCounts(db: SupabaseClient, profileId: string) {
-  const [followers, following] = await Promise.all([
-    db.from("follows").select("follower_id", { count: "exact", head: true }).eq("following_id", profileId),
-    db.from("follows").select("following_id", { count: "exact", head: true }).eq("follower_id", profileId),
-  ]);
-  return { followers: followers.count ?? 0, following: following.count ?? 0 };
-}
-
-/** Post count per skill for one person, biggest first. */
-export async function fetchSkillCounts(db: SupabaseClient, profileId: string) {
-  const { data, error } = await db.from("posts").select("skill_slug").eq("author_id", profileId).limit(1000);
-  if (error) throw new Error(error.message);
-  const counts = new Map<string, number>();
-  for (const row of data ?? []) counts.set(row.skill_slug, (counts.get(row.skill_slug) ?? 0) + 1);
-  return [...counts.entries()].map(([slug, total]) => ({ slug, total })).sort((a, b) => b.total - a.total);
-}
-
 /** Which of these posts the signed-in user has liked. */
 export async function fetchLikedIds(db: SupabaseClient, userId: string, postIds: string[]) {
   if (!postIds.length) return new Set<string>();

@@ -1,9 +1,8 @@
 import { ImageResponse } from "next/og";
-import { isConfigured } from "@/lib/env";
+import { isConfigured, SITE_URL } from "@/lib/env";
 import { OG_COLORS, OG_SIZE, OgFrame, ogFonts } from "@/lib/og";
-import { fetchPost } from "@/lib/queries";
+import { getPost } from "@/lib/server-queries";
 import { getSkill } from "@/lib/skills";
-import { supabasePublic } from "@/lib/supabase/public";
 
 export const alt = "A flex on Flexit";
 export const size = OG_SIZE;
@@ -11,7 +10,7 @@ export const contentType = "image/png";
 
 export default async function Image({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const post = isConfigured ? await fetchPost(supabasePublic(), id).catch(() => null) : null;
+  const post = isConfigured ? await getPost(id).catch(() => null) : null;
   const skill = getSkill(post?.skill_slug ?? "other");
   const title = post?.title ?? "Made something? Flex it.";
   const fontSize = title.length > 70 ? 60 : title.length > 40 ? 74 : 92;
@@ -41,7 +40,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", fontSize: 30 }}>
           <div style={{ display: "flex", flexDirection: "column" }}>
             <span style={{ fontWeight: 600 }}>{post?.author.display_name ?? "Flexit"}</span>
-            <span style={{ color: OG_COLORS.muted }}>{post ? `@${post.author.username}` : "getflexit.vercel.app"}</span>
+            <span style={{ color: OG_COLORS.muted }}>{post ? `@${post.author.username}` : new URL(SITE_URL).host}</span>
           </div>
           {post && (
             <span style={{ color: OG_COLORS.muted }}>

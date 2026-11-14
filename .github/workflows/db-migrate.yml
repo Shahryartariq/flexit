@@ -1,0 +1,39 @@
+name: Apply database migrations
+
+# Run by hand from the Actions tab after merging a PR that adds a migration.
+# Needs three repository secrets: SUPABASE_ACCESS_TOKEN (account token),
+# SUPABASE_PROJECT_REF and SUPABASE_DB_PASSWORD.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only list the migrations that would run
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-migrate
+  cancel-in-progress: false
+
+jobs:
+  push:
+    name: supabase db push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+      - run: pnpm exec supabase db push ${{ inputs.dry_run && '--dry-run' || '' }}

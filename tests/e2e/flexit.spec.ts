@@ -319,6 +319,94 @@ test("share images, sitemap and privacy page are served", async ({ request, page
   await expect(page.getByRole("heading", { level: 1, name: "Privacy" })).toBeVisible();
 });
 
+test("missing pages are real 404s and pages carry canonical links and structured data", async ({ request }) => {
+  for (const path of ["/p/00000000-0000-4000-8000-000000000000", "/p/not-a-flex", "/u/nobody_here_123", "/u/x"]) {
+    expect((await request.get(path)).status(), path).toBe(404);
+  }
+  const upper = await request.get(`/u/${maker.username.toUpperCase()}`, { maxRedirects: 0 });
+  expect(upper.status()).toBe(308);
+  expect(upper.headers().location).toMatch(new RegExp(`/u/${maker.username}$`));
+
+  const home = await (await request.get("/")).text();
+  expect(home).toMatch(/rel="canonical" href="http:\/\/localhost:3000\/?"/);
+  expect(home).toContain('"@type":"WebSite"');
+
+  const sitemap = await (await request.get("/sitemap.xml")).text();
+  const flexUrl = sitemap.match(/<loc>(http[^<]*\/p\/[0-9a-f-]{36})<\/loc>/)?.[1];
+  expect(flexUrl).toBeTruthy();
+  const flex = await request.get(new URL(flexUrl!).pathname);
+  expect(flex.status()).toBe(200);
+  const flexHtml = await flex.text();
+  expect(flexHtml).toContain('"@type":"SocialMediaPosting"');
+  expect(flexHtml).toContain(`rel="canonical" href="${flexUrl}"`);
+
+  const profile = await (await request.get(`/u/${maker.username}`)).text();
+  expect(profile).toContain('"@type":"ProfilePage"');
+  const card = await request.get(`/u/${maker.username}/opengraph-image`);
+  expect(card.status()).toBe(200);
+  expect(card.headers()["content-type"]).toBe("image/png");
+});
+
+test("feed cards load the small copy of a photo", async ({ page }) => {
+  await page.goto(`/u/${maker.username}`);
+  const image = page.getByTestId("feed").locator("img[src*='/post-images/']").first();
+  await expect(image).toHaveAttribute("src", /-sm\.(webp|jpg)$/);
+  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+});
+
+test("a hidden flex is unavailable to others but its author still sees it", async ({ browser }) => {
+  test.skip(!process.env.DATABASE_URL, "needs direct database access");
+  const author = await newContext(browser);
+  await signIn(author.page, fan.username);
+  const url = await postFlex(author.page, { skill: "Writing", title: `Hidden draft ${stamp}` });
+  const id = url.split("/p/")[1];
+  const { default: pg } = await import("pg");
+  const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await db.connect();
+  await db.query("update public.posts set hidden = true where id = $1", [id]);
+  await db.end();
+
+  const visitor = await newContext(browser);
+  const response = await visitor.page.goto(url);
+  expect(response?.status()).toBe(200);
+  await expect(visitor.page.getByRole("heading", { name: "This flex isn't available" })).toBeVisible();
+  await expect(visitor.page.locator('meta[name="robots"][content*="noindex"]')).toHaveCount(1);
+
+  await author.page.goto(url);
+  await expect(author.page.getByText(/hidden from everyone else/)).toBeVisible();
+  await expect(author.page.getByRole("heading", { level: 1, name: `Hidden draft ${stamp}` })).toBeVisible();
+  await visitor.context.close();
+  await author.context.close();
+});
+
+test("people can change their password", async ({ browser }) => {
+  const { context, page } = await newContext(browser);
+  await signIn(page, fan.username);
+  const change = async (from: string, to: string) => {
+    await page.goto("/settings");
+    await page.getByLabel("Current password").fill(from);
+    await page.getByLabel("New password", { exact: true }).fill(to);
+    await page.getByLabel("Repeat new password").fill(to);
+    await page.getByRole("button", { name: "Change password" }).click();
+  };
+  await change("wrong-password", "brand-new-pass-1");
+  await expect(page.getByText("Your current password isn't right.")).toBeVisible();
+  await change(PASSWORD, "brand-new-pass-1");
+  await expect(page.getByText("Password changed.")).toBeVisible();
+  await expectAccessible(page);
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.goto("/sign-in");
+  await page.getByLabel("Email").fill(`${fan.username}@example.com`);
+  await page.getByLabel("Password").fill("brand-new-pass-1");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("link", { name: "Flex it" })).toBeVisible();
+  // Put it back for anything that runs later.
+  await change("brand-new-pass-1", PASSWORD);
+  await expect(page.getByText("Password changed.")).toBeVisible();
+  await context.close();
+});
+
 test("people can delete their account and everything goes with it", async ({ browser }) => {
   const { context, page } = await newContext(browser);
   await page.goto("/sign-in");
