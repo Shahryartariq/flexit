@@ -18,6 +18,13 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  // Inlined at build time into every bundle, including the proxy, which on
+  // Vercel doesn't see NEXT_PUBLIC_ variables at runtime.
+  env: {
+    FLEXIT_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    FLEXIT_SUPABASE_KEY:
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+  },
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,

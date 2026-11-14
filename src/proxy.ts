@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { isConfigured, SUPABASE_KEY, SUPABASE_URL } from "@/lib/env";
+const SUPABASE_URL = process.env.FLEXIT_SUPABASE_URL ?? "";
+const SUPABASE_KEY = process.env.FLEXIT_SUPABASE_KEY ?? "";
+const isConfigured = Boolean(SUPABASE_URL && SUPABASE_KEY);
 
 /**
  * Flex and profile pages stream, so once rendering starts the status is 200.
@@ -8,12 +10,6 @@ import { isConfigured, SUPABASE_KEY, SUPABASE_URL } from "@/lib/env";
  * If Supabase is slow or down, the page renders as usual.
  */
 export async function proxy(request: NextRequest) {
-  const response = await check(request);
-  response.headers.set("x-flexit-check", isConfigured ? "on" : "off");
-  return response;
-}
-
-async function check(request: NextRequest) {
   if (!isConfigured || request.headers.get("next-router-prefetch")) return NextResponse.next();
   const [, kind, raw] = request.nextUrl.pathname.split("/");
   const value = decodeURIComponent(raw ?? "");
