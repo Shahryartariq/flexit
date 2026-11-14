@@ -8,6 +8,12 @@ import { isConfigured, SUPABASE_KEY, SUPABASE_URL } from "@/lib/env";
  * If Supabase is slow or down, the page renders as usual.
  */
 export async function proxy(request: NextRequest) {
+  const response = await check(request);
+  response.headers.set("x-flexit-check", isConfigured ? "on" : "off");
+  return response;
+}
+
+async function check(request: NextRequest) {
   if (!isConfigured || request.headers.get("next-router-prefetch")) return NextResponse.next();
   const [, kind, raw] = request.nextUrl.pathname.split("/");
   const value = decodeURIComponent(raw ?? "");
