@@ -130,6 +130,15 @@ describe("safeNext", () => {
     expect(safeNext("https://evil.example")).toBe("/");
     expect(safeNext(null, "/new")).toBe("/new");
   });
+  it("blocks tricks that browsers turn into another site", () => {
+    expect(safeNext("/\t/evil.example")).toBe("/");
+    expect(safeNext("/\n/evil.example")).toBe("/");
+    expect(safeNext("/%09/evil.example")).toBe("/%09/evil.example");
+    expect(new URL(safeNext("/\u0000//evil.example"), "https://flexit.app").host).toBe("flexit.app");
+  });
+  it("keeps the query and hash", () => {
+    expect(safeNext("/search?q=art#people")).toBe("/search?q=art#people");
+  });
 });
 
 describe("queries helpers", () => {

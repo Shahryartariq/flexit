@@ -14,7 +14,7 @@ import { ReportButton } from "./ReportButton";
 import { useNow } from "@/lib/clock";
 import { isConfigured } from "@/lib/env";
 import { fullDate, linkLabel, timeAgo } from "@/lib/format";
-import { publicImageUrl } from "@/lib/images";
+import { publicImageUrl, thumbPath } from "@/lib/images";
 import { fetchLikedIds, friendlyError } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import { getSkill, skillColors } from "@/lib/skills";
@@ -99,7 +99,7 @@ export function PostDetail({
       setDeleting(false);
       return;
     }
-    if (post.image_path) await db.storage.from("post-images").remove([post.image_path]);
+    if (post.image_path) await db.storage.from("post-images").remove([post.image_path, thumbPath(post.image_path)]);
     toast("Flex deleted");
     router.push(`/u/${post.author.username}`);
     router.refresh();

@@ -8,6 +8,18 @@ export function publicImageUrl(bucket: Bucket, path: string | null | undefined) 
   return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 
+/**
+ * The small copy uploaded next to every flex photo for feed cards
+ * ("abc.webp" → "abc-sm.webp"). Cards fall back to the full photo when it's missing.
+ */
+export function thumbPath(path: string) {
+  return path.replace(/\.(webp|jpe?g|png)$/, "-sm.$1");
+}
+
+/** Longest side of the full photo and of the card-sized copy, in pixels. */
+export const FULL_SIZE = 1600;
+export const THUMB_SIZE = 800;
+
 /** Scales width × height down to fit inside a square of `max`, keeping the ratio. */
 export function fitWithin(width: number, height: number, max: number) {
   if (width <= 0 || height <= 0) return { width: 0, height: 0 };

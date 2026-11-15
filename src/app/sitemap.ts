@@ -20,11 +20,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const db = supabasePublic();
   const [posts, profiles] = await Promise.all([
-    db.from("posts").select("id, created_at").order("created_at", { ascending: false }).limit(5000),
+    db.from("posts").select("id, created_at, edited_at").order("created_at", { ascending: false }).limit(5000),
     db.from("profiles").select("username, created_at").order("created_at", { ascending: false }).limit(5000),
   ]);
   for (const post of posts.data ?? []) {
-    pages.push({ url: `${SITE_URL}/p/${post.id}`, lastModified: post.created_at, priority: 0.6 });
+    pages.push({ url: `${SITE_URL}/p/${post.id}`, lastModified: post.edited_at ?? post.created_at, priority: 0.6 });
   }
   for (const profile of profiles.data ?? []) {
     pages.push({ url: `${SITE_URL}/u/${profile.username}`, lastModified: profile.created_at, priority: 0.5 });

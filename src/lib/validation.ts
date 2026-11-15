@@ -61,11 +61,16 @@ export const commentSchema = z
   .min(1, "Write something first.")
   .max(500, "Keep comments under 500 characters.");
 
+export const passwordSchema = z
+  .string()
+  .min(8, "Use at least 8 characters.")
+  .max(72, "Use at most 72 characters.");
+
 export const signUpSchema = z.object({
   display_name: z.string().trim().min(1, "Add your name.").max(50, "Keep your name under 50 characters."),
   username: usernameSchema,
   email: z.email("Enter a valid email."),
-  password: z.string().min(8, "Use at least 8 characters."),
+  password: passwordSchema,
 });
 
 /** First message of a failed parse, for showing next to a form. */

@@ -8,24 +8,25 @@ import { FeedSkeleton } from "@/components/FeedSkeleton";
 import { FollowerCount, FollowerProvider, ProfileActions } from "@/components/ProfileActions";
 import { SetupNotice } from "@/components/SetupNotice";
 import { SkillChip } from "@/components/SkillChip";
-import { isConfigured } from "@/lib/env";
+import { isConfigured, SITE_URL } from "@/lib/env";
+import { toJsonLd } from "@/lib/json-ld";
 import { publicImageUrl } from "@/lib/images";
-import { fetchFollowCounts, fetchPosts, fetchProfile, fetchSkillCounts } from "@/lib/queries";
 import { requestTime } from "@/lib/request-time";
-import { supabasePublic } from "@/lib/supabase/public";
+import { getProfilePage } from "@/lib/server-queries";
 
 type Props = { params: Promise<{ username: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!isConfigured) return {};
-  const profile = await fetchProfile(supabasePublic(), (await params).username).catch(() => null);
-  if (!profile) return { title: "Profile not found" };
-  const avatar = publicImageUrl("avatars", profile.avatar_path);
+  const page = await getProfilePage((await params).username).catch(() => null);
+  if (!page) return { title: "Profile not found", robots: { index: false } };
+  const { profile } = page;
   return {
     title: `${profile.display_name} (@${profile.username})`,
     description: profile.headline || profile.bio || `${profile.display_name}'s flexes on Flexit.`,
     alternates: { canonical: `/u/${profile.username}` },
-    openGraph: { type: "profile", ...(avatar ? { images: [avatar] } : {}) },
+    // The share image comes from ./opengraph-image.tsx.
+    openGraph: { type: "profile", username: profile.username },
   };
 }
 
@@ -48,14 +49,29 @@ async function ProfileContent({ params }: Props) {
   const { username } = await params;
   await connection();
   if (!isConfigured) return <SetupNotice />;
-  const db = supabasePublic();
-  const profile = await fetchProfile(db, username);
-  if (!profile) notFound();
-  const [counts, skills, posts] = await Promise.all([
-    fetchFollowCounts(db, profile.id),
-    fetchSkillCounts(db, profile.id),
-    fetchPosts(db, { authorId: profile.id }),
-  ]);
+  const page = await getProfilePage(username);
+  if (!page) notFound();
+  const { profile, skills, posts } = page;
+  const counts = { followers: page.followers, following: page.following };
+  const avatar = publicImageUrl("avatars", profile.avatar_path);
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ProfilePage",
+    dateCreated: profile.created_at,
+    mainEntity: {
+      "@type": "Person",
+      name: profile.display_name,
+      alternateName: `@${profile.username}`,
+      identifier: profile.id,
+      url: `${SITE_URL}/u/${profile.username}`,
+      ...(profile.headline ? { description: profile.headline } : {}),
+      ...(avatar ? { image: avatar } : {}),
+      interactionStatistic: [
+        { "@type": "InteractionCounter", interactionType: "https://schema.org/FollowAction", userInteractionCount: counts.followers },
+        { "@type": "InteractionCounter", interactionType: "https://schema.org/WriteAction", userInteractionCount: skills.reduce((sum, s) => sum + s.total, 0) },
+      ],
+    },
+  };
   const total = skills.reduce((sum, s) => sum + s.total, 0);
   const joined = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(
     new Date(profile.created_at),
@@ -63,6 +79,7 @@ async function ProfileContent({ params }: Props) {
 
   return (
     <div className="flex flex-col gap-8">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: toJsonLd(jsonLd) }} />
       <FollowerProvider initial={counts.followers}>
       <section className="card flex flex-col gap-6 p-6 sm:flex-row sm:items-start sm:p-8">
         <Avatar name={profile.display_name} username={profile.username} path={profile.avatar_path} size="lg" />

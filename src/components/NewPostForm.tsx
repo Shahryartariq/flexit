@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { compressImage } from "@/lib/compress";
-import { ACCEPTED_TYPES, imagePath, MAX_UPLOAD_BYTES } from "@/lib/images";
+import { ACCEPTED_TYPES, FULL_SIZE, imagePath, MAX_UPLOAD_BYTES, THUMB_SIZE, thumbPath } from "@/lib/images";
 import { friendlyError } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import { SKILLS, skillColors } from "@/lib/skills";
@@ -128,12 +128,20 @@ export function NewPostForm() {
     try {
       if (picked) {
         setBusy("Preparing your photo…");
-        const { blob, extension } = await compressImage(picked.file);
-        uploaded = imagePath(session.user.id, extension);
+        const [full, small] = await Promise.all([
+          compressImage(picked.file, FULL_SIZE),
+          compressImage(picked.file, THUMB_SIZE, 0.8),
+        ]);
+        uploaded = imagePath(session.user.id, full.extension);
+        const smallPath = thumbPath(uploaded).replace(/\.\w+$/, `.${small.extension}`);
         setBusy("Uploading…");
-        const { error: uploadError } = await db.storage
-          .from("post-images")
-          .upload(uploaded, blob, { contentType: blob.type, cacheControl: "31536000", upsert: false });
+        const bucket = db.storage.from("post-images");
+        const options = { cacheControl: "31536000", upsert: false };
+        const results = await Promise.all([
+          bucket.upload(uploaded, full.blob, { ...options, contentType: full.blob.type }),
+          bucket.upload(smallPath, small.blob, { ...options, contentType: small.blob.type }),
+        ]);
+        const uploadError = results.find((r) => r.error)?.error;
         if (uploadError) throw new Error(uploadError.message);
       }
       setBusy("Posting…");
@@ -151,7 +159,7 @@ export function NewPostForm() {
       toast("Flexed! It's live now.");
       router.push(`/p/${data.id}`);
     } catch (e) {
-      if (uploaded) await db.storage.from("post-images").remove([uploaded]);
+      if (uploaded) await db.storage.from("post-images").remove([uploaded, thumbPath(uploaded)]);
       const message = e instanceof Error ? e.message : String(e);
       setError(/image|browser/i.test(message) && !/row-level/.test(message) ? message : friendlyError(message));
       setBusy(null);

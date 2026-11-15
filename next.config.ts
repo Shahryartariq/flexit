@@ -18,6 +18,13 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  // Inlined at build time into every bundle, including the proxy, which on
+  // Vercel doesn't see NEXT_PUBLIC_ variables at runtime.
+  env: {
+    FLEXIT_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    FLEXIT_SUPABASE_KEY:
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+  },
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,
@@ -38,6 +45,9 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "Content-Security-Policy", value: csp },
           { key: "X-Content-Type-Options", value: "nosniff" },
+          // frame-ancestors covers modern browsers; this covers old ones.
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
