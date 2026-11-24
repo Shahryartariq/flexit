@@ -1,0 +1,26 @@
+name: Keep the database awake
+
+# Supabase pauses free projects after 7 days without activity. This calls the
+# site's health check every day, which reads from the database. If it fails
+# (database paused or down, site not configured), GitHub emails the repo owner.
+on:
+  schedule:
+    - cron: "37 3 * * *" # daily, 08:37 in Pakistan
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Health check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SITE_URL: ${{ vars.SITE_URL || 'https://getflexit.vercel.app' }}
+    steps:
+      - name: Read from the database through the live site
+        run: |
+          body=$(curl -fsS --retry 3 --retry-delay 20 --retry-all-errors --max-time 30 "$SITE_URL/api/health")
+          echo "$body"
+          echo "$body" | grep -q '"ok":true'

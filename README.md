@@ -79,7 +79,8 @@ pnpm build && pnpm test:e2e   # end-to-end tests in Chromium
 2. In **Authentication → Sign In / Providers → Email**, turn off **Confirm email** (or set up custom SMTP). In **URL Configuration**, set the site URL and add `https://<your-site>/**` to **Redirect URLs**.
 3. Deploy to Vercel with `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. `NEXT_PUBLIC_SITE_URL` is optional: without it, links use the project's production domain.
 4. Optional: `NEXT_PUBLIC_PASSWORD_RESET=1` once custom SMTP is set up (Supabase's built-in email only reaches your own team), the GitHub provider plus `NEXT_PUBLIC_AUTH_GITHUB=1`, `GA_MEASUREMENT_ID` and `GOOGLE_SITE_VERIFICATION`.
-5. New migrations can be applied from **Actions → Apply database migrations** after adding the `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF` and `SUPABASE_DB_PASSWORD` secrets. If earlier migrations were pasted into the SQL editor, mark them applied once first: `supabase migration repair --status applied <version>`.
+5. Supabase pauses free projects after 7 days without activity. The **Keep the database awake** workflow calls `/api/health` (one small database read) every day; if it fails, GitHub emails you. Set the `SITE_URL` repository variable if your address isn't getflexit.vercel.app.
+6. New migrations can be applied from **Actions → Apply database migrations** after adding the `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF` and `SUPABASE_DB_PASSWORD` secrets. If earlier migrations were pasted into the SQL editor, mark them applied once first: `supabase migration repair --status applied <version>`.
 
 ## License
 
