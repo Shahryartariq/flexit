@@ -347,6 +347,13 @@ test("missing pages are real 404s and pages carry canonical links and structured
   expect(card.headers()["content-type"]).toBe("image/png");
 });
 
+test("the health check reads from the database", async ({ request }) => {
+  const response = await request.get("/api/health");
+  expect(response.status()).toBe(200);
+  expect(response.headers()["cache-control"]).toContain("no-store");
+  expect(await response.json()).toMatchObject({ ok: true, skills: 12 });
+});
+
 test("feed cards load the small copy of a photo", async ({ page }) => {
   await page.goto(`/u/${maker.username}`);
   const image = page.getByTestId("feed").locator("img[src*='/post-images/']").first();
